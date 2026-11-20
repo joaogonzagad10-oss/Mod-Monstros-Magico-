@@ -1,0 +1,124 @@
+name: Build All-In-One Forge 1.18.2 Mod
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.6.4'
+
+      - name: Generate Forge 1.18.2 project and Monstros Magicos source files
+        run: |
+          python3 - << 'EOF'
+          import os, json, struct, zlib
+
+          os.makedirs("gradle/wrapper", exist_ok=True)
+          os.makedirs("src/main/java/com/monstrosmagicos/mod/entity/client", exist_ok=True)
+          os.makedirs("src/main/java/com/monstrosmagicos/mod/entity/custom", exist_ok=True)
+          os.makedirs("src/main/java/com/monstrosmagicos/mod/event", exist_ok=True)
+          os.makedirs("src/main/java/com/monstrosmagicos/mod/item", exist_ok=True)
+          os.makedirs("src/main/resources/META-INF", exist_ok=True)
+          os.makedirs("src/main/resources/assets/monstrosmagicos/lang", exist_ok=True)
+          os.makedirs("src/main/resources/assets/monstrosmagicos/models/item", exist_ok=True)
+          os.makedirs("src/main/resources/assets/monstrosmagicos/textures/entity", exist_ok=True)
+          os.makedirs("src/main/resources/assets/monstrosmagicos/textures/item", exist_ok=True)
+          os.makedirs("src/main/resources/data/monstrosmagicos/forge/biome_modifier", exist_ok=True)
+
+          def write_file(path, content):
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content.strip() + "\n")
+
+          def make_png(width, height, pixel_func):
+              raw_data = bytearray()
+              for y in range(height):
+                  raw_data.append(0)
+                  for x in range(width):
+                      r, g, b, a = pixel_func(x, y)
+                      raw_data.extend([r, g, b, a])
+              def chunk(tag, data):
+                  return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
+              ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+              idat = zlib.compress(bytes(raw_data))
+              return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+          write_file("settings.gradle", """
+          pluginManagement {
+              repositories {
+                  gradlePluginPortal()
+                  maven {
+                      name = 'MinecraftForge'
+                      url = 'https://maven.minecraftforge.net/'
+                  }
+              }
+          }
+          """)
+
+          write_file("gradle.properties", """
+          org.gradle.jvmargs=-Xmx3G -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          """)
+
+          write_file("gradle/wrapper/gradle-wrapper.properties", """
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-7.6.4-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          """)
+
+          write_file("build.gradle", """
+          plugins {
+              id 'eclipse'
+              id 'maven-publish'
+              id 'net.minecraftforge.gradle' version '5.1.+'
+          }
+
+          version = '1.0.0'
+          group = 'com.monstrosmagicos.mod'
+          archivesBaseName = 'monstrosmagicos-1.18.2'
+
+          java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+          minecraft {
+              mappings channel: 'official', version: '1.18.2'
+
+              runs {
+                  client {
+                      workingDirectory project.file('run')
+                      property 'forge.logging.markers', 'REGISTRIES'
+                      property 'forge.logging.console.level', 'debug'
+                      mods {
+                          monstrosmagicos {
+                              source sourceSets.main
+                          }
+                      }
+                  }
+
+                  server {
+                      workingDirectory project.file('run')
+                      property 'forge.logging.markers', 'REGISTRIES'
+                      property '
+                      
